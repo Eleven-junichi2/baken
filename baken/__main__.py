@@ -56,6 +56,7 @@ class Horse:
 class HorseEntry:
     horse: Horse
     post_position: int | None = None
+    weight: int | None = None
     odds: float | None = None
     jockey: str | None = None
     factors: dict = field(default_factory=dict)
@@ -80,6 +81,12 @@ if __name__ == "__main__":
     )
     response.encoding = response.apparent_encoding
     shutsuba_html_interface = BeautifulSoup(response.text, "html.parser")
+    response = requests.get(
+        netkeiba_odds_url,
+        headers=headers,
+    )
+    response.encoding = response.apparent_encoding
+    odds_html_interface = BeautifulSoup(response.text, "html.parser")
     surface_and_distance = (
         shutsuba_html_interface.find("div", class_="RaceData01")
         .find("span")
@@ -88,9 +95,10 @@ if __name__ == "__main__":
     )
     race_info.track_surface = TrackSurface(surface_and_distance[:1])
     race_info.distance_in_meters = int(surface_and_distance[1:-1])
-    # print(vars(race_info))
+    print(vars(race_info))
     entry_table = shutsuba_html_interface.select("table.Shutuba_Table")
-    # print(entry_table[0])
+    tansyo_fukusyo_table = odds_html_interface.select("table#Ninki")
+    print(tansyo_fukusyo_table)
     for row in entry_table[0].select("tr.HorseList"):
         post_position = row.find("td", class_=re.compile(r"Umaban[1-8]")).get_text()
         horse_name = row.find(class_="HorseName").get_text()
@@ -99,7 +107,18 @@ if __name__ == "__main__":
         horse = Horse(name=horse_name, age=age)
         trainer = row.find(class_="Trainer").get_text()
         traning_center, trainer = trainer[:2], trainer[2:]
-        print(post_position, horse_name, age, jockey, traning_center, trainer)
+        weight, weight_change = row.find(class_="Weight").get_text().strip().split("(")
+        weight_change = weight_change.rstrip(")")
+        print(
+            post_position,
+            horse_name,
+            age,
+            jockey,
+            traning_center,
+            trainer,
+            weight,
+            weight_change,
+        )
 
     # for data in horse_datas:
     #     race_info.entries.append(
