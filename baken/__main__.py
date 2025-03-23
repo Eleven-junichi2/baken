@@ -33,14 +33,17 @@ class RaceInfo:
     weather: Weather | None = None
     entries: list["HorseEntry"] = field(default_factory=list)
 
+
 class TrainingCenter(StrEnum):
     RITTO = "栗東"
     MIHO = "美浦"
+
 
 @dataclass
 class Trainer:
     name: str
     training_center: TrainingCenter
+
 
 @dataclass
 class Horse:
