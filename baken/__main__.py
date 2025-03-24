@@ -6,6 +6,27 @@ from selenium import webdriver
 from bs4 import BeautifulSoup
 import requests
 
+WIN_RATES_BY_POPULARITY = (
+    0.328,
+    0.19,
+    0.133,
+    0.092,
+    0.075,
+    0.055,
+    0.038,
+    0.031,
+    0.022,
+    0.012,
+    0.013,
+    0.009,
+    0.007,
+    0.0001,
+    0.002,
+    0.001,
+    0.0001,
+    0.0001,
+)
+
 
 class TrackSurface(StrEnum):
     DIRT = "ダ"
@@ -34,34 +55,13 @@ class RaceInfo:
     weather: Weather | None = None
     entries: list["HorseEntry"] = field(default_factory=list)
 
-    # 勝率を計算するメソッド
-    def calc_win_rate(self) -> float:
+    def calc_win_rate(self):
         # 単勝人気順に勝率が定義されたタプル
-        win_rate_values_by_popularity = (
-            0.328,
-            0.19,
-            0.133,
-            0.092,
-            0.075,
-            0.055,
-            0.038,
-            0.031,
-            0.022,
-            0.012,
-            0.013,
-            0.009,
-            0.007,
-            0.0001,
-            0.002,
-            0.001,
-            0.0001,
-            0.0001,
-        )
         sorted_entries: tuple[HorseEntry] = tuple(
             sorted(self.entries, key=lambda x: x.odds)
         )
         for popularity, (entry, win_rate_by_popularity) in enumerate(
-            zip(sorted_entries, win_rate_values_by_popularity)
+            zip(sorted_entries, WIN_RATES_BY_POPULARITY)
         ):
             print(
                 f"{popularity}番人気の勝率={win_rate_by_popularity} {entry.horse.name} オッズ：{entry.odds} 期待値={entry.odds * win_rate_by_popularity}"
