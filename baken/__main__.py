@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from enum import Enum, auto, StrEnum
+from pathlib import Path
 import re
+import sqlite3
 
 from selenium import webdriver
 from bs4 import BeautifulSoup
@@ -8,6 +10,7 @@ import requests
 
 RACE_SEARCH_DETAIL_SITEURL = r"https://db.netkeiba.com/?pid=race_search_detail"
 UPCOMING_AND_RECENT_RACE_LIST_SITEURL = r"https://race.netkeiba.com/top/race_list.html"
+
 
 class TrackSurface(StrEnum):
     DIRT = "ダ"
@@ -87,6 +90,7 @@ class Horse:
     age: int
     trainer: Trainer | None = None
 
+
 @dataclass
 class Horses:
     horses: list[Horse] = field(default_factory=list)
@@ -101,8 +105,75 @@ class HorseEntry:
     jockey: str | None = None
     factors: dict = field(default_factory=dict)
 
+
 def cli():
-    print(f"レース詳細検索url：{RACE_SEARCH_DETAIL_SITEURL} 直近レース一覧url:{UPCOMING_AND_RECENT_RACE_LIST_SITEURL}")
+    con = sqlite3.connect(Path("horse_racing.db"))
+    cur = con.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS horse (
+        netkeiba_horse_id TEXT PRIMARY KEY,
+        name TEXT,
+        birth_date TEXT,
+        lgt TEXT,
+        sire_netkeiba_horse_id TEXT,
+        dam_netkeiba_horse_id TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS race_program (
+        netkeiba_race_id INTEGER PRIMARY KEY,
+        race_name TEXT,
+        course TEXT,
+        distance INTEGER,
+        track_surface TEXT,
+        race_date TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS race_card (
+        netkeiba_race_id INTEGER,
+        post_position INTEGER,
+        netkeiba_horse_id INTEGER,
+        odds REAL,
+        netkeiba_jockey_id TEXT,
+        weight INTEGER,
+        jockey_weight INTEGER,
+        PRIMARY KEY (netkeiba_race_id, post_position),
+        FOREIGN KEY (netkeiba_race_id) REFERENCES race_program(netkeiba_race_id),
+        FOREIGN KEY (netkeiba_horse_id) REFERENCES horse(netkeiba_horse_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS past_performance (
+        netkeiba_horse_id TEXT,
+        netkeiba_race_id TEXT,
+        finish_position INTEGER,
+        finish_time TEXT,
+        final_3f TEXT,
+        PRIMARY KEY (netkeiba_horse_id, netkeiba_race_id),
+        FOREIGN KEY (netkeiba_horse_id) REFERENCES horse(netkeiba_horse_id),
+        FOREIGN KEY (netkeiba_race_id) REFERENCES race_program(netkeiba_race_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS jockey (
+        netkeiba_jockey_id TEXT PRIMARY KEY,
+        name TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS trainer (
+        netkeiba_trainer_id TEXT PRIMARY KEY,
+        name TEXT,
+        training_center TEXT
+    )
+    """)
+    con.commit()
+    cur.close()
+
+    print(
+        f"レース詳細検索url：{RACE_SEARCH_DETAIL_SITEURL} 直近レース一覧url:{UPCOMING_AND_RECENT_RACE_LIST_SITEURL}"
+    )
     print("helpを入力すると 使い方を表示、exitを入力すると 終了")
     print("調べたいレースのnetkeibaでの`race_id`を入力してください")
 
@@ -110,7 +181,9 @@ def cli():
         userinput = input("> ")
         if userinput == "help":
             print("使い方：race_idを調べて入力してください。")
-            print("上記urlから出馬表・レース結果等を参照すると、そのページのurlから見つけることができます。")
+            print(
+                "上記urlから出馬表・レース結果等を参照すると、そのページのurlから見つけることができます。"
+            )
             print(r"例1：https://db.netkeiba.com/race/レースID/")
             print(r"例2:https://race.netkeiba.com/race/shutuba.html?race_id=レースID")
         if userinput == "exit":
@@ -121,16 +194,66 @@ def cli():
             # -- TODO --
 
             # スクレイピング対象テーブルの存在で判定
-            race_result_url = fr"https://race.netkeiba.com/race/result.html?race_id={userinput}"
+            result_url = (
+                rf"https://race.netkeiba.com/race/result.html?race_id={userinput}"
+            )
+            shutuba_url = (
+                rf"https://race.netkeiba.com/race/shutuba.html?race_id={userinput}"
+            )
             driver = webdriver.Firefox()
-            driver.get(race_result_url)
-            soup = BeautifulSoup(driver.page_source.encode("utf-8"), "html.parser")
+            driver.implicitly_wait(10)
+            driver.get(result_url)
+            soup = BeautifulSoup(driver.page_source, "html.parser")
             driver.quit()
+            # レース開催済みであるか調べる
             table = soup.select_one("table#All_Result_Table")
-            for row in table.select_one("tbody").select("tr.HorseList"):
-                print(row.get_text())
-            break
+            if table:
+                print(f"レースID {userinput} の結果が出ています。")
+                cur = con.cursor()
+                for row in table.select_one("tbody").select("tr.HorseList"):
+                    # print(row)
+                    # print("---")
+                    netkeiba_horse_id = row.select_one(".Horse_Info a")["href"].split(
+                        "/"
+                    )[-1]
+                    finish_time, margin, final_3f = [
+                        timehtml.get_text().strip() for timehtml in row.select(".Time")
+                    ]
+                    horse_name = row.select_one(".Horse_Info").get_text().strip()
+                    lgt = row.select_one(".Lgt_Txt").get_text().strip()[0]
+                    print(
+                        horse_name,
+                        lgt,
+                        row.select_one(".JockeyWeight").get_text().strip(),
+                        row.select_one(".Jockey").get_text().strip(),
+                        finish_time,
+                        margin,
+                        row.select_one(".Odds").get_text().strip(),
+                        final_3f,
+                        row.select_one(".Trainer").get_text().strip(),
+                        row.select_one(".Weight").get_text().strip(),
+                    )
+                    cur.execute(
+                        """
+                    INSERT INTO horse (netkeiba_horse_id, name, lgt)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(netkeiba_horse_id) DO UPDATE SET
+                        name = excluded.name,
+                        lgt = excluded.lgt
+                    """,
+                        (netkeiba_horse_id, horse_name, lgt),
+                    )
+            else:
+                print(f"レースID {userinput} は結果確定前です。")
+                driver = webdriver.Firefox()
+                driver.implicitly_wait(10)
+                driver.get(shutuba_url)
+                driver.quit()
+            cur = con.cursor()
 
+            cur.close()
+            break
+    con.close()
 
 
 if __name__ == "__main__":
