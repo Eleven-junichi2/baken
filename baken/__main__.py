@@ -129,6 +129,7 @@ def cli():
             table = soup.select_one("table#All_Result_Table")
             for row in table.select_one("tbody").select("tr.HorseList"):
                 print(row.get_text())
+            break
 
 
 
