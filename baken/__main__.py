@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 import sqlite3
 
+import questionary
 from selenium import webdriver
 from bs4 import BeautifulSoup
 import requests
@@ -106,8 +107,7 @@ class HorseEntry:
     factors: dict = field(default_factory=dict)
 
 
-def cli():
-    con = sqlite3.connect(Path("horse_racing.db"))
+def prepare_database(con: sqlite3.Connection):
     cur = con.cursor()
     cur.execute("""
     CREATE TABLE IF NOT EXISTS horse (
@@ -171,6 +171,10 @@ def cli():
     con.commit()
     cur.close()
 
+
+def old_cli():
+    con = sqlite3.connect(Path("horse_racing.db"))
+    prepare_database(con)
     print(
         f"レース詳細検索url：{RACE_SEARCH_DETAIL_SITEURL} 直近レース一覧url:{UPCOMING_AND_RECENT_RACE_LIST_SITEURL}"
     )
@@ -186,6 +190,7 @@ def cli():
             )
             print(r"例1：https://db.netkeiba.com/race/レースID/")
             print(r"例2:https://race.netkeiba.com/race/shutuba.html?race_id=レースID")
+            continue
         if userinput == "exit":
             break
         else:
@@ -256,6 +261,18 @@ def cli():
     con.close()
 
 
+def cli():
+    userinput = questionary.select(
+        "",
+        instruction="（矢印キーで選択）",
+        choices=[
+            {"name": "予想モード", "value": "analysis_mode"},
+            {"name": "レース番組登録モード", "value": "race_data_registration_mode"},
+            {"name": "終了", "value": "exit"},
+        ],
+    ).ask()
+    print(userinput)  # 選択肢に対応する値が出力される
+
+
 if __name__ == "__main__":
-    race_info = RaceInfo()
     cli()
