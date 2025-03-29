@@ -121,7 +121,7 @@ def prepare_database(con: sqlite3.Connection):
     """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS race_program (
-        netkeiba_race_id INTEGER PRIMARY KEY,
+        netkeiba_race_id TEXT PRIMARY KEY,
         race_name TEXT,
         course TEXT,
         distance INTEGER,
@@ -131,9 +131,9 @@ def prepare_database(con: sqlite3.Connection):
     """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS race_card (
-        netkeiba_race_id INTEGER,
+        netkeiba_race_id TEXT,
         post_position INTEGER,
-        netkeiba_horse_id INTEGER,
+        netkeiba_horse_id TEXT,
         odds REAL,
         netkeiba_jockey_id TEXT,
         weight INTEGER,
@@ -262,16 +262,53 @@ def old_cli():
 
 
 def cli():
-    userinput = questionary.select(
-        "",
-        instruction="（矢印キーで選択）",
-        choices=[
-            {"name": "予想モード", "value": "analysis_mode"},
-            {"name": "レース番組登録モード", "value": "race_data_registration_mode"},
-            {"name": "終了", "value": "exit"},
-        ],
-    ).ask()
-    print(userinput)  # 選択肢に対応する値が出力される
+    con = sqlite3.connect(Path("horse_racing.db"))
+    prepare_database(con)
+    while True:
+        userinput = questionary.select(
+            "",
+            instruction="（矢印キーで選択）",
+            choices=[
+                {"name": "予想モード", "value": "analysis_mode"},
+                {"name": "レース番組登録モード", "value": "race_data_registration_mode"},
+                {"name": "終了", "value": "exit"},
+            ],
+        ).ask()
+        match userinput:
+            case "exit":
+                break
+            case "analysis_mode":
+                print("予想モード")
+            case "race_data_registration_mode":
+                race_id = questionary.text("race_idを入力してください").ask()                
+                driver = webdriver.Firefox()
+                driver.implicitly_wait(10)
+                # 出馬表のhtmlを取得
+                driver.get(
+                    f"https://race.netkeiba.com/race/shutuba.html?race_id={race_id}"
+                )
+                soup = BeautifulSoup(driver.page_source.encode("utf-8"), "html.parser")
+                driver.quit()
+                tbody = soup.select_one("table.Shutuba_Table").select_one("tbody")
+                cur = con.cursor()
+                for row in tbody.find_all("tr"):
+                    horse_name = row.select_one(".HorseName").get_text().strip()
+                    jockey_name = row.select_one(".Jockey").get_text().strip()
+                    trainer_name = row.select_one(".Trainer").get_text().strip()
+                    horse_id = row.select_one(".HorseInfo a")["href"].split("/")[-1]
+                    print(
+                        horse_name,
+                        jockey_name,
+                        trainer_name,
+                        horse_id,
+                    )
+                    # cur.execute("INSERT INTO race_card(netkeiba_race_id, post_position, netkeiba_horse_id, odds, netkeiba_jockey_id)", race_id, )
+                # race_program = cur.fetchall()
+                # print("---")
+                # print(race_program)
+                # print("---")
+                # -- TODO -- レースIDの結果反映チェック
+    con.close()
 
 
 if __name__ == "__main__":
