@@ -3,6 +3,7 @@ from enum import Enum, auto, StrEnum
 from pathlib import Path
 import re
 import sqlite3
+import pprint
 
 import questionary
 from selenium import webdriver
@@ -134,10 +135,11 @@ def prepare_database(con: sqlite3.Connection):
         netkeiba_race_id TEXT,
         post_position INTEGER,
         netkeiba_horse_id TEXT,
-        odds REAL,
+        weight_to_carry INTEGER,
         netkeiba_jockey_id TEXT,
         weight INTEGER,
-        jockey_weight INTEGER,
+        weight_change INTEGER,
+        odds REAL,
         PRIMARY KEY (netkeiba_race_id, post_position),
         FOREIGN KEY (netkeiba_race_id) REFERENCES race_program(netkeiba_race_id),
         FOREIGN KEY (netkeiba_horse_id) REFERENCES horse(netkeiba_horse_id)
@@ -270,7 +272,10 @@ def cli():
             instruction="（矢印キーで選択）",
             choices=[
                 {"name": "予想モード", "value": "analysis_mode"},
-                {"name": "レース番組登録モード", "value": "race_data_registration_mode"},
+                {
+                    "name": "レース番組登録モード",
+                    "value": "race_data_registration_mode",
+                },
                 {"name": "終了", "value": "exit"},
             ],
         ).ask()
@@ -280,7 +285,7 @@ def cli():
             case "analysis_mode":
                 print("予想モード")
             case "race_data_registration_mode":
-                race_id = questionary.text("race_idを入力してください").ask()                
+                race_id = questionary.text("race_idを入力してください").ask()
                 driver = webdriver.Firefox()
                 driver.implicitly_wait(10)
                 # 出馬表のhtmlを取得
@@ -289,20 +294,70 @@ def cli():
                 )
                 soup = BeautifulSoup(driver.page_source.encode("utf-8"), "html.parser")
                 driver.quit()
-                tbody = soup.select_one("table.Shutuba_Table").select_one("tbody")
+                table = soup.select_one("table.Shutuba_Table")
                 cur = con.cursor()
-                for row in tbody.find_all("tr"):
-                    horse_name = row.select_one(".HorseName").get_text().strip()
-                    jockey_name = row.select_one(".Jockey").get_text().strip()
-                    trainer_name = row.select_one(".Trainer").get_text().strip()
-                    horse_id = row.select_one(".HorseInfo a")["href"].split("/")[-1]
-                    print(
-                        horse_name,
-                        jockey_name,
-                        trainer_name,
-                        horse_id,
+                table_from_scrapes = []
+                for row in table.find("tbody").find_all("tr"):
+                    cells = [cell.get_text().strip() for cell in row.select("td")]
+                    post_position = cells[1]
+                    horse_name = cells[3]
+                    horse_id = (
+                        row.select_one(".HorseName").find("a")["href"].split("/")[-1]
                     )
-                    # cur.execute("INSERT INTO race_card(netkeiba_race_id, post_position, netkeiba_horse_id, odds, netkeiba_jockey_id)", race_id, )
+                    lgt = cells[4][0]
+                    weight_to_carry = cells[5]
+                    jockey_name = cells[6]
+                    jockey_id = (
+                        row.select_one(".Jockey").find("a")["href"].split("/")[-2]
+                    )
+                    trainer = cells[7]
+                    trainer_id = (
+                        row.select_one(".Trainer").find("a")["href"].split("/")[-2]
+                    )
+                    weight = cells[8]
+                    weight, weight_change = cells[8].split("(")
+                    weight_change = weight_change.replace(")", "")
+                    odds = cells[9]
+                    print(
+                        post_position,
+                        horse_name,
+                        horse_id,
+                        lgt,
+                        weight_to_carry,
+                        jockey_name,
+                        jockey_id,
+                        trainer,
+                        trainer_id,
+                        weight,
+                        weight_change,
+                        odds,
+                    )
+                # cur.execute(
+                #     "INSERT INTO race_card(netkeiba_race_id, post_position, netkeiba_horse_id, weight_to_carry, netkeiba_jockey_id, weight, weight_change, odds)",
+                #     race_id,
+                #     post_position,
+                #     horse_id,
+                #     weight_to_carry,
+                #     jockey_id,
+                #     weight,
+                #     weight_change,
+                #     odds
+                # )
+                # print(table_from_scrapes)
+                # pprint.pprint(table_from_scrapes)
+                # post_position = row.select_one("td.Umaban1").get_text().strip()
+                # lgt_and_age = row.select_one("td.Barei").get_text().strip()
+                # horse_name = row.select_one("td.HorseInfo .HorseName").get_text().strip()
+                # jockey_name = row.select_one("td.Jockey").get_text().strip()
+                # trainer_name = row.select_one("td.Trainer").get_text().strip()
+                # weight = row.select_one("td.Weight").get_text().strip()
+                # horse_id = row.select_one("td.HorseInfo a")["href"].split("/")[-1]
+                # print(
+                #     horse_name,
+                #     jockey_name,
+                #     trainer_name,
+                #     horse_id,
+                # )
                 # race_program = cur.fetchall()
                 # print("---")
                 # print(race_program)
